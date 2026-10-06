@@ -19,10 +19,10 @@
   --shadow-lg:0 24px 64px rgba(0,0,0,.65);
   --ease:cubic-bezier(.4,0,.2,1);
   --ease-bounce:cubic-bezier(.34,1.56,.64,1);
-  /* ✅ ESPAÇAMENTO AUMENTADO */
-  --gap-stats:28px;
-  --gap-cards:22px;
-  --gap-panels:36px;
+  /* Espaçamento estável para evitar crescimento visual dos painéis. */
+  --gap-stats:18px;
+  --gap-cards:14px;
+  --gap-panels:24px;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
@@ -199,7 +199,8 @@ body.cinema #bgCanvas{opacity:.55}
 .content-grid .panel,.charts-grid .panel,.bottom-grid .panel{margin:0}
 .anime-list,.ranking-list{display:flex;flex-direction:column;gap:var(--gap-cards)}
 .anime-item{
-  display:grid;grid-template-columns:82px 1fr auto auto;gap:20px;align-items:center;
+  display:grid;grid-template-columns:82px minmax(0,1fr) auto auto;gap:20px;align-items:center;
+  min-height:146px;max-height:146px;overflow:hidden;
   background:#151515;border-radius:14px;padding:18px;
   transition:transform .25s var(--ease),background .25s,box-shadow .25s;
   animation:fadeInUp .4s var(--ease) backwards;
@@ -218,7 +219,7 @@ body.cinema #bgCanvas{opacity:.55}
 .item-time{text-align:right;min-width:76px}
 .item-time strong{display:block;font-size:14px}
 .item-time small{color:var(--muted);font-size:10px}
-.rank-row{display:grid;grid-template-columns:36px 1fr auto;align-items:center;gap:16px;padding:18px 0;border-bottom:1px solid #272727;transition:background .2s,padding .2s;border-radius:8px}
+.rank-row{display:grid;grid-template-columns:36px minmax(0,1fr) auto;align-items:center;gap:16px;padding:18px 0;min-height:73px;border-bottom:1px solid #272727;transition:background .2s,padding .2s;border-radius:8px}
 .rank-row:hover{background:#161616;padding-left:12px;padding-right:12px}
 .rank-row:last-child{border-bottom:0}
 .rank-number{font-family:'Barlow Condensed';font-size:26px;color:#666}
@@ -328,7 +329,7 @@ select{background:#171717;border:1px solid #383838;color:#ddd;padding:9px 11px;b
   .search-results{grid-template-columns:1fr;gap:18px}
   .search-card img{width:80px;height:108px}
   .panel{padding:20px;margin-bottom:22px}
-  .anime-item{grid-template-columns:70px 1fr auto;gap:16px;padding:14px}
+  .anime-item{grid-template-columns:70px minmax(0,1fr) auto;gap:16px;padding:14px;min-height:122px;max-height:122px}
   .anime-item img{width:70px;height:94px}
   .item-time{display:none}
   .form-grid{grid-template-columns:1fr}
@@ -1211,8 +1212,8 @@ function drawCharts(stats) {
 function drawBarChart(canvas, entries, mode) {
   const ctx = canvas.getContext("2d");
   const width = canvas.clientWidth || 500;
-  // O gráfico de anime cresce conforme a quantidade de registros para não esmagar os nomes.
-  const height = mode === "bar" ? Math.max(250, entries.length * 46 + 24) : 250;
+  // Altura fixa: a quantidade de registros não pode aumentar o painel nem deslocar a página.
+  const height = mode === "bar" ? 300 : 250;
   const ratio = window.devicePixelRatio || 1;
   canvas.style.height = mode === "bar" ? `${height}px` : "";
   canvas.width = width * ratio;
@@ -1262,8 +1263,8 @@ function drawBarChart(canvas, entries, mode) {
   const valueWidth = 62;
   const barLeft = labelWidth + 14;
   const barWidth = Math.max(40, width - barLeft - valueWidth - 12);
-  const rowHeight = 46;
-  const barHeight = 22;
+  const rowHeight = Math.max(24, Math.min(46, (height - 24) / Math.max(1, sorted.length)));
+  const barHeight = Math.max(12, Math.min(22, rowHeight - 10));
   const sorted = [...entries].sort((a, b) => b.value - a.value);
 
   sorted.forEach((entry, index) => {
@@ -1276,7 +1277,7 @@ function drawBarChart(canvas, entries, mode) {
 
     ctx.fillStyle = "#d7d7d7";
     ctx.textAlign = "right";
-    ctx.fillText(shortLabel, labelWidth, y + 16);
+    ctx.fillText(shortLabel, labelWidth, y + Math.min(16, rowHeight - 5));
 
     ctx.fillStyle = "#292929";
     ctx.beginPath();
@@ -1294,7 +1295,7 @@ function drawBarChart(canvas, entries, mode) {
     ctx.textAlign = "left";
     ctx.fillStyle = "#ff9a9f";
     ctx.font = "700 10px Inter";
-    ctx.fillText(formatMinutes(value), barLeft + barWidth + 10, y + 15);
+    ctx.fillText(formatMinutes(value), barLeft + barWidth + 10, y + Math.min(15, rowHeight - 6));
     ctx.font = "11px Inter";
   });
   ctx.textAlign = "left";
@@ -1933,8 +1934,17 @@ render();
 
 // Se o backend for configurado, os registros remotos são mesclados sem remover a API de busca.
 loadRecordsFromDatabase().then((remoteRecords) => {
-  if (!remoteRecords) return;
-  state.data.records = remoteRecords;
+  if (!Array.isArray(remoteRecords)) return;
+  const localRecords = Array.isArray(state.data.records) ? state.data.records : [];
+  const merged = new Map(localRecords.map((record) => [String(record.id), record]));
+  remoteRecords.forEach((record) => {
+    if (record && record.id != null) merged.set(String(record.id), record);
+  });
+  const nextRecords = [...merged.values()];
+  const before = JSON.stringify(localRecords);
+  const after = JSON.stringify(nextRecords);
+  if (before === after) return;
+  state.data.records = nextRecords;
   saveData(state.data);
   render();
 }).catch((error) => {
